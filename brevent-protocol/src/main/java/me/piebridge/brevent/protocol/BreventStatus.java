@@ -3,12 +3,14 @@ package me.piebridge.brevent.protocol;
 import android.os.Build;
 import android.os.Parcel;
 import android.os.Parcelable;
+import android.os.SystemClock;
 import android.support.annotation.NonNull;
 import android.support.v4.util.SimpleArrayMap;
 import android.util.SparseIntArray;
 
 import java.util.Collection;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 
 import me.piebridge.brevent.override.HideApiOverride;
 
@@ -33,13 +35,34 @@ public class BreventStatus extends BreventToken implements Parcelable {
 
     public final Collection<String> mTrustAgents;
 
+    public final boolean mSupportStopped;
+
+    public final boolean mSupportStandby;
+
+    public final long mDaemonTime;
+
+    public final long mServerTime;
+
+    public final int mUid;
+
+    public final Collection<String> mAndroidProcesses;
+
     public BreventStatus(UUID token, Collection<String> brevent, Collection<String> priority,
-                         SimpleArrayMap<String, SparseIntArray> processes, Collection<String> trustAgents) {
+                         SimpleArrayMap<String, SparseIntArray> processes,
+                         Collection<String> trustAgents, boolean supportStopped,
+                         boolean supportStandby, long daemonTime, long serverTime, int uid,
+                         Collection<String> androidProcesses) {
         super(BreventProtocol.STATUS_RESPONSE, token);
         mBrevent = brevent;
         mPriority = priority;
         mProcesses = processes;
         mTrustAgents = trustAgents;
+        mSupportStopped = supportStopped;
+        mSupportStandby = supportStandby;
+        mDaemonTime = daemonTime;
+        mServerTime = serverTime;
+        mUid = uid;
+        mAndroidProcesses = androidProcesses;
     }
 
     BreventStatus(Parcel in) {
@@ -48,6 +71,12 @@ public class BreventStatus extends BreventToken implements Parcelable {
         mPriority = ParcelUtils.readCollection(in);
         mProcesses = ParcelUtils.readSimpleArrayMap(in);
         mTrustAgents = ParcelUtils.readCollection(in);
+        mSupportStopped = in.readInt() != 0;
+        mSupportStandby = in.readInt() != 0;
+        mDaemonTime = in.readLong();
+        mServerTime = in.readLong();
+        mUid = in.readInt();
+        mAndroidProcesses = ParcelUtils.readCollection(in);
     }
 
     @Override
@@ -57,6 +86,12 @@ public class BreventStatus extends BreventToken implements Parcelable {
         ParcelUtils.writeCollection(dest, mPriority);
         ParcelUtils.writeSimpleArrayMap(dest, mProcesses);
         ParcelUtils.writeCollection(dest, mTrustAgents);
+        dest.writeInt(mSupportStopped ? 1 : 0);
+        dest.writeInt(mSupportStandby ? 1 : 0);
+        dest.writeLong(mDaemonTime);
+        dest.writeLong(mServerTime);
+        dest.writeInt(mUid);
+        ParcelUtils.writeCollection(dest, mAndroidProcesses);
     }
 
     public static final Creator<BreventStatus> CREATOR = new Creator<BreventStatus>() {
@@ -143,6 +178,11 @@ public class BreventStatus extends BreventToken implements Parcelable {
             }
         }
         return false;
+    }
+
+    public static int now() {
+        // i don't think can larger than Integer.MAX_VALUE, which is boot since 68 years
+        return (int) TimeUnit.MILLISECONDS.toSeconds(SystemClock.elapsedRealtime());
     }
 
 }

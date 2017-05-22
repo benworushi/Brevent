@@ -52,14 +52,24 @@
             android:enabled="false">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+            <intent-filter>
                 <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
             </intent-filter>
         </receiver>
 
-        <service
-            android:name=".ui.BreventIntentService"
-            android:exported="false">
-        </service>
+        <receiver
+            android:name=".ui.BreventServerReceiver"
+            android:permission="android.permission.DEVICE_POWER">
+            <intent-filter>
+                <action android:name="me.piebridge.brevent.intent.action.HOME_TID" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="me.piebridge.brevent.intent.action.ADD_PACKAGE" />
+            </intent-filter>
+        </receiver>
+
+        <service android:name=".ui.BreventIntentService" />
     </application>
 
 </manifest>

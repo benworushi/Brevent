@@ -7,6 +7,7 @@ import android.provider.Settings;
 import android.support.annotation.DrawableRes;
 import android.support.v7.widget.CardView;
 import android.support.v7.widget.RecyclerView;
+import android.text.TextUtils;
 import android.view.ContextMenu;
 import android.view.Menu;
 import android.view.MenuItem;
@@ -14,15 +15,14 @@ import android.view.View;
 import android.widget.ImageView;
 import android.widget.TextView;
 
-import java.util.Collections;
-
 import me.piebridge.brevent.BuildConfig;
 import me.piebridge.brevent.R;
 
 /**
  * Created by thom on 2017/1/25.
  */
-public class AppsItemViewHolder extends RecyclerView.ViewHolder implements View.OnCreateContextMenuListener, MenuItem.OnMenuItemClickListener {
+public class AppsItemViewHolder extends RecyclerView.ViewHolder
+        implements View.OnCreateContextMenuListener, MenuItem.OnMenuItemClickListener {
 
     private static final String PACKAGE_SHELL = "com.android.shell";
 
@@ -50,26 +50,37 @@ public class AppsItemViewHolder extends RecyclerView.ViewHolder implements View.
 
     @Override
     public void onCreateContextMenu(ContextMenu menu, View v, ContextMenu.ContextMenuInfo menuInfo) {
-        menu.setHeaderTitle(nameView.getText());
-        menu.add(Menu.NONE, R.string.context_menu_choose, Menu.NONE, R.string.context_menu_choose);
-        menu.add(Menu.NONE, R.string.context_menu_package_name, Menu.NONE, R.string.context_menu_package_name);
-        menu.add(Menu.NONE, R.string.context_menu_app_info, Menu.NONE, R.string.context_menu_app_info);
+        menu.setHeaderTitle(label);
+        menu.add(Menu.NONE, R.string.context_menu_select, Menu.NONE, R.string.context_menu_select);
+        menu.add(Menu.NONE, R.string.context_menu_package_name, Menu.NONE,
+                R.string.context_menu_package_name);
+        menu.add(Menu.NONE, R.string.context_menu_app_info, Menu.NONE,
+                R.string.context_menu_app_info);
         if (BuildConfig.APPLICATION_ID.equals(packageName)) {
-            menu.add(Menu.NONE, R.string.context_menu_brevent_server_info, Menu.NONE, R.string.context_menu_brevent_server_info);
-        } else if (mFragment.getActivity().getPackageManager().getLaunchIntentForPackage(packageName) != null) {
+            menu.add(Menu.NONE, R.string.context_menu_brevent_server_info, Menu.NONE,
+                    R.string.context_menu_brevent_server_info);
+        } else if (
+                mFragment.getActivity().getPackageManager().getLaunchIntentForPackage(packageName) !=
+                        null) {
             menu.add(Menu.NONE, R.string.context_menu_open, Menu.NONE, R.string.context_menu_open);
         }
         BreventActivity activity = (BreventActivity) mFragment.getActivity();
         if (activity.isBrevent(packageName)) {
             if (activity.isPriority(packageName)) {
-                menu.add(Menu.NONE, R.string.context_menu_unset_priority, Menu.NONE, R.string.context_menu_unset_priority);
+                menu.add(Menu.NONE, R.string.context_menu_unset_priority, Menu.NONE,
+                        R.string.context_menu_unset_priority);
             } else {
-                menu.add(Menu.NONE, R.string.context_menu_set_priority, Menu.NONE, R.string.context_menu_set_priority);
+                menu.add(Menu.NONE, R.string.context_menu_set_priority, Menu.NONE,
+                        R.string.context_menu_set_priority);
             }
         }
         int size = menu.size();
         for (int i = 0; i < size; ++i) {
             menu.getItem(i).setOnMenuItemClickListener(this);
+        }
+        String important = activity.getLabel("", packageName);
+        if (!TextUtils.isEmpty(important)) {
+            menu.add(important);
         }
     }
 
@@ -83,8 +94,8 @@ public class AppsItemViewHolder extends RecyclerView.ViewHolder implements View.
             case R.string.context_menu_brevent_server_info:
                 openAppInfo(PACKAGE_SHELL);
                 break;
-            case R.string.context_menu_choose:
-                mFragment.select(Collections.singletonList(packageName));
+            case R.string.context_menu_select:
+                iconView.performClick();
                 break;
             case R.string.context_menu_package_name:
                 copy(packageName);
@@ -110,12 +121,14 @@ public class AppsItemViewHolder extends RecyclerView.ViewHolder implements View.
     private void copy(String packageName) {
         BreventActivity breventActivity = (BreventActivity) mFragment.getActivity();
         breventActivity.copy(packageName);
-        String message = breventActivity.getString(R.string.context_menu_snackbar_copied, packageName);
+        String message =
+                breventActivity.getString(R.string.context_menu_snackbar_copied, packageName);
         breventActivity.showSnackbar(message);
     }
 
     private void openAppInfo(String packageName) {
-        Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", packageName, null));
+        Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                Uri.fromParts("package", packageName, null));
         mFragment.startActivity(intent);
     }
 

@@ -15,4 +15,12 @@ public class UserHandle {
      */
     public static int USER_SYSTEM = 0;
 
+    public static int myUserId() {
+        throw new UnsupportedOperationException();
+    }
+
+    public static int getUserId(int uid) {
+        throw new UnsupportedOperationException();
+    }
+
 }

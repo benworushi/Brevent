@@ -17,14 +17,14 @@ import android.content.SharedPreferences;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
+import android.content.pm.PackageParser;
 import android.content.pm.ResolveInfo;
-import android.graphics.Color;
+import android.content.pm.Signature;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.IDeviceIdleController;
 import android.os.Message;
-import android.os.Process;
 import android.os.RemoteException;
 import android.os.ServiceManager;
 import android.preference.PreferenceManager;
@@ -36,36 +36,34 @@ import android.support.design.widget.AppBarLayout;
 import android.support.design.widget.CoordinatorLayout;
 import android.support.design.widget.Snackbar;
 import android.support.design.widget.TabLayout;
-import android.support.v4.content.ContextCompat;
 import android.support.v4.util.ArraySet;
 import android.support.v4.util.SimpleArrayMap;
 import android.support.v4.view.ViewPager;
 import android.telecom.TelecomManager;
 import android.util.Log;
 import android.util.SparseIntArray;
-import android.util.TypedValue;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
 import android.view.accessibility.AccessibilityManager;
 import android.widget.Toolbar;
 
-import java.lang.reflect.Field;
-import java.lang.reflect.Member;
+import java.lang.reflect.InvocationTargetException;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
-import de.robv.android.xposed.XC_MethodHook;
-import de.robv.android.xposed.XC_MethodReplacement;
-import de.robv.android.xposed.XposedBridge;
+import dalvik.system.PathClassLoader;
 import me.piebridge.brevent.BuildConfig;
 import me.piebridge.brevent.R;
 import me.piebridge.brevent.override.HideApiOverride;
+import me.piebridge.brevent.override.HideApiOverrideM;
 import me.piebridge.brevent.override.HideApiOverrideN;
 import me.piebridge.brevent.protocol.BreventConfiguration;
 import me.piebridge.brevent.protocol.BreventIntent;
@@ -73,10 +71,9 @@ import me.piebridge.brevent.protocol.BreventPackages;
 import me.piebridge.brevent.protocol.BreventPriority;
 import me.piebridge.brevent.protocol.BreventProtocol;
 import me.piebridge.brevent.protocol.BreventStatus;
-import me.piebridge.brevent.protocol.BreventUtils;
-import me.piebridge.brevent.protocol.TileUtils;
 
-public class BreventActivity extends Activity implements ViewPager.OnPageChangeListener, AppBarLayout.OnOffsetChangedListener {
+public class BreventActivity extends Activity
+        implements ViewPager.OnPageChangeListener, AppBarLayout.OnOffsetChangedListener {
 
     public static final int MESSAGE_RETRIEVE = 0;
     public static final int MESSAGE_RETRIEVE2 = 1;
@@ -107,11 +104,10 @@ public class BreventActivity extends Activity implements ViewPager.OnPageChangeL
     public static final int IMPORTANT_DIALER = 6;
     public static final int IMPORTANT_ASSISTANT = 7;
     public static final int IMPORTANT_WEBVIEW = 8;
-    public static final int IMPORTANT_TILE = 9;
-    public static final int IMPORTANT_ACCESSIBILITY = 10;
-    public static final int IMPORTANT_DEVICE_ADMIN = 11;
-    public static final int IMPORTANT_BATTERY = 13;
-    public static final int IMPORTANT_TRUST_AGENT = 14;
+    public static final int IMPORTANT_ACCESSIBILITY = 9;
+    public static final int IMPORTANT_DEVICE_ADMIN = 10;
+    public static final int IMPORTANT_BATTERY = 11;
+    public static final int IMPORTANT_TRUST_AGENT = 12;
 
     private static final int ROOT_TIMEOUT = 10000;
 
@@ -122,6 +118,8 @@ public class BreventActivity extends Activity implements ViewPager.OnPageChangeL
     private static final String FRAGMENT_PROGRESS_APPS = "progress_apps";
 
     private static final String FRAGMENT_FEEDBACK = "feedback";
+
+    private static final String FRAGMENT_UNSUPPORTED = "unsupported";
 
     private static final int REQUEST_CODE_SETTINGS = 1;
 
@@ -166,35 +164,49 @@ public class BreventActivity extends Activity implements ViewPager.OnPageChangeL
 
     private Snackbar mSnackBar;
 
+    private int mInstalledCount;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        try {
-            // disable hooks
-            Field disableHooks = XposedBridge.class.getDeclaredField("disableHooks");
-            disableHooks.setAccessible(true);
-            disableHooks.set(null, true);
-
-            // replace hooked method callbacks
-            Field sHookedMethodCallbacks = XposedBridge.class.getDeclaredField("sHookedMethodCallbacks");
-            sHookedMethodCallbacks.setAccessible(true);
-            @SuppressWarnings("unchecked")
-            Map<Member, XposedBridge.CopyOnWriteSortedSet<XC_MethodHook>> map = (Map<Member, XposedBridge.CopyOnWriteSortedSet<XC_MethodHook>>) sHookedMethodCallbacks.get(null);
-            for (XposedBridge.CopyOnWriteSortedSet<XC_MethodHook> hooked : map.values()) {
-                Object[] snapshot = hooked.getSnapshot();
-                int length = snapshot.length;
-                for (int i = 0; i < length; ++i) {
-                    snapshot[i] = XC_MethodReplacement.DO_NOTHING;
+        boolean disabledXposed = !BuildConfig.RELEASE;
+        if (BuildConfig.SERVER != null) {
+            String clazzServer = String.valueOf(BuildConfig.SERVER);
+            try {
+                ClassLoader systemClassLoader = ClassLoader.getSystemClassLoader();
+                ApplicationInfo ai = getPackageManager().getApplicationInfo(getPackageName(), 0);
+                PathClassLoader classLoader = new PathClassLoader(ai.sourceDir, systemClassLoader);
+                classLoader.loadClass(clazzServer).getMethod(String.valueOf('b')).invoke(null);
+                disabledXposed = true;
+            } catch (Throwable t) {
+                if (t instanceof InvocationTargetException) {
+                    Throwable throwable = ((InvocationTargetException) t).getTargetException();
+                    if (throwable instanceof NoClassDefFoundError) {
+                        StackTraceElement[] elements = throwable.getStackTrace();
+                        int l = elements.length - 1;
+                        if (l > 0x7 && elements[0].getClassName().equals(clazzServer) &&
+                                elements[l].getClassName().startsWith("com.android.internal.os")) {
+                            disabledXposed = true;
+                        }
+                    }
+                }
+                if (!disabledXposed) {
+                    UILog.d("Can't disable Xposed", t);
                 }
             }
-        } catch (Throwable t) { // NOSONAR
-            // do nothing
         }
-        SharedPreferences preferences = PreferenceManager.getDefaultSharedPreferences(getApplicationContext());
-        if (preferences.getBoolean(SettingsFragment.SHOW_ALL_APPS, false)) {
-            preferences.edit().putBoolean(SettingsFragment.SHOW_ALL_APPS, false).apply();
+        if (BuildConfig.RELEASE) {
+            verifySignatures();
         }
-        if (preferences.getBoolean(BreventGuide.GUIDE, true)) {
+        SharedPreferences preferences =
+                PreferenceManager.getDefaultSharedPreferences(getApplicationContext());
+        if (!disabledXposed) {
+            new UnsupportedFragment()
+                    .setMessage(R.string.unsupported_xposed)
+                    .show(getFragmentManager(), FRAGMENT_UNSUPPORTED);
+        } else if (!BreventApplication.IS_OWNER) {
+            new UnsupportedFragment().show(getFragmentManager(), FRAGMENT_UNSUPPORTED);
+        } else if (preferences.getBoolean(BreventGuide.GUIDE, true)) {
             openGuide();
             finish();
         } else {
@@ -203,6 +215,7 @@ public class BreventActivity extends Activity implements ViewPager.OnPageChangeL
             mCoordinator = (CoordinatorLayout) findViewById(R.id.coordinator);
 
             mToolbar = (Toolbar) findViewById(R.id.toolbar);
+            ColorUtils.fixToolbar(this, mToolbar);
             setActionBar(mToolbar);
 
             mPager = (ViewPager) findViewById(R.id.pager);
@@ -219,9 +232,34 @@ public class BreventActivity extends Activity implements ViewPager.OnPageChangeL
 
             mTitles = getResources().getStringArray(R.array.fragment_apps);
 
-            mColorControlNormal = resolveColor(android.R.attr.colorControlNormal);
-            mTextColorPrimary = resolveColor(android.R.attr.textColorPrimary);
-            mColorControlHighlight = resolveColor(android.R.attr.colorControlHighlight);
+            mColorControlNormal = ColorUtils.resolveColor(this, android.R.attr.colorControlNormal);
+            mTextColorPrimary = ColorUtils.resolveColor(this, android.R.attr.textColorPrimary);
+            mColorControlHighlight =
+                    ColorUtils.resolveColor(this, android.R.attr.colorControlHighlight);
+        }
+    }
+
+    private void verifySignatures() {
+        Signature[] signatures = getSignatures(getPackageManager(), BuildConfig.APPLICATION_ID);
+        boolean equals = false;
+        if (signatures != null) {
+            for (Signature signature : signatures) {
+                try {
+                    MessageDigest md = MessageDigest.getInstance("SHA");
+                    md.update(signature.toByteArray());
+                    byte[] sha1 = md.digest();
+                    if (Arrays.equals(BuildConfig.SIGNATURE, sha1)) {
+                        equals = true;
+                        break;
+                    }
+                } catch (NoSuchAlgorithmException e) {
+                    UILog.w("NoSuchAlgorithmException");
+                }
+            }
+        }
+        if (!equals) {
+            UILog.e("invalid signature");
+            finish();
         }
     }
 
@@ -241,10 +279,8 @@ public class BreventActivity extends Activity implements ViewPager.OnPageChangeL
     }
 
     public void showDisabled(int title) {
-        if (stopped) {
-            return;
-        }
-        AppsDisabledFragment disabledFragment = (AppsDisabledFragment) getFragmentManager().findFragmentByTag(FRAGMENT_DISABLED);
+        AppsDisabledFragment disabledFragment =
+                (AppsDisabledFragment) getFragmentManager().findFragmentByTag(FRAGMENT_DISABLED);
         if (disabledFragment != null) {
             disabledFragment.dismiss();
         }
@@ -258,11 +294,9 @@ public class BreventActivity extends Activity implements ViewPager.OnPageChangeL
     }
 
     public void showProgress(int message) {
-        if (stopped) {
-            return;
-        }
         hideDisabled();
-        ProgressFragment progressFragment = (ProgressFragment) getFragmentManager().findFragmentByTag(FRAGMENT_PROGRESS);
+        ProgressFragment progressFragment =
+                (ProgressFragment) getFragmentManager().findFragmentByTag(FRAGMENT_PROGRESS);
         if (progressFragment != null) {
             progressFragment.dismiss();
         }
@@ -272,10 +306,8 @@ public class BreventActivity extends Activity implements ViewPager.OnPageChangeL
     }
 
     public void showAppProgress(int progress, int max, int size) {
-        if (stopped) {
-            return;
-        }
-        AppsProgressFragment progressFragment = (AppsProgressFragment) getFragmentManager().findFragmentByTag(FRAGMENT_PROGRESS_APPS);
+        AppsProgressFragment progressFragment =
+                (AppsProgressFragment) getFragmentManager().findFragmentByTag(FRAGMENT_PROGRESS_APPS);
         if (progressFragment == null) {
             progressFragment = new AppsProgressFragment();
             progressFragment.setTitle(R.string.process_retrieving_apps);
@@ -296,21 +328,20 @@ public class BreventActivity extends Activity implements ViewPager.OnPageChangeL
     }
 
     private void hideFragment(String tag) {
-        if (stopped) {
-            return;
-        }
         DialogFragment fragment = (DialogFragment) getFragmentManager().findFragmentByTag(tag);
         if (fragment != null) {
-            fragment.dismiss();
+            fragment.dismissAllowingStateLoss();
         }
     }
 
     @Override
-    protected void onStart() {
+    protected synchronized void onStart() {
         super.onStart();
+        UILog.d("onStart, update stopped to false");
         stopped = false;
         if (mReceiver != null) {
-            registerReceiver(mReceiver, new IntentFilter(BreventIntent.ACTION_BREVENT), BreventIntent.PERMISSION_SHELL, mHandler);
+            registerReceiver(mReceiver, new IntentFilter(BreventIntent.ACTION_BREVENT),
+                    BreventIntent.PERMISSION_SHELL, mHandler);
             if (!hasResponse) {
                 mHandler.sendEmptyMessage(MESSAGE_RETRIEVE);
             }
@@ -318,7 +349,8 @@ public class BreventActivity extends Activity implements ViewPager.OnPageChangeL
     }
 
     @Override
-    protected void onStop() {
+    protected synchronized void onStop() {
+        UILog.d("onStop, update stopped to true");
         stopped = true;
         if (mReceiver != null) {
             unregisterReceiver(mReceiver);
@@ -331,6 +363,7 @@ public class BreventActivity extends Activity implements ViewPager.OnPageChangeL
     private void dismissDialogFragmentIfNeeded(boolean allowStateLoss) {
         dismissDialogFragmentIfNeeded(FRAGMENT_DISABLED, allowStateLoss);
         dismissDialogFragmentIfNeeded(FRAGMENT_PROGRESS, allowStateLoss);
+        dismissDialogFragmentIfNeeded(FRAGMENT_UNSUPPORTED, allowStateLoss);
     }
 
     private void dismissDialogFragmentIfNeeded(String tag, boolean allowStateLoss) {
@@ -447,7 +480,9 @@ public class BreventActivity extends Activity implements ViewPager.OnPageChangeL
             return 0;
         }
         SparseIntArray status = mProcesses.get(packageName);
-        if (BreventStatus.isStandby(status)) {
+        if (isFavorite(packageName)) {
+            return R.drawable.ic_favorite_border_black_24dp;
+        } else if (BreventStatus.isStandby(status)) {
             return R.drawable.ic_snooze_black_24dp;
         } else if (BreventStatus.isRunning(status)) {
             return R.drawable.ic_alarm_black_24dp;
@@ -474,18 +509,22 @@ public class BreventActivity extends Activity implements ViewPager.OnPageChangeL
             menu.add(Menu.NONE, R.string.menu_guide, Menu.NONE, R.string.menu_guide);
             menu.add(Menu.NONE, R.string.menu_settings, Menu.NONE, R.string.menu_settings);
         } else {
-            MenuItem remove = menu.add(Menu.NONE, R.string.action_restore, Menu.NONE, R.string.action_restore)
-                    .setIcon(R.drawable.ic_panorama_fish_eye_black_24dp);
+            MenuItem remove =
+                    menu.add(Menu.NONE, R.string.action_restore, Menu.NONE, R.string.action_restore)
+                            .setIcon(R.drawable.ic_panorama_fish_eye_black_24dp);
             remove.getIcon().setTint(mColorControlNormal);
             remove.setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS);
 
-            MenuItem brevent = menu.add(Menu.NONE, R.string.action_brevent, Menu.NONE, R.string.action_brevent)
-                    .setIcon(R.drawable.ic_block_black_24dp);
+            MenuItem brevent =
+                    menu.add(Menu.NONE, R.string.action_brevent, Menu.NONE, R.string.action_brevent)
+                            .setIcon(R.drawable.ic_block_black_24dp);
             brevent.getIcon().setTint(mColorControlNormal);
             brevent.setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS);
 
-            menu.add(Menu.NONE, R.string.action_select_important, Menu.NONE, R.string.action_select_important);
-            menu.add(Menu.NONE, R.string.action_select_inverse, Menu.NONE, R.string.action_select_inverse);
+            menu.add(Menu.NONE, R.string.action_select_important, Menu.NONE,
+                    R.string.action_select_important);
+            menu.add(Menu.NONE, R.string.action_select_inverse, Menu.NONE,
+                    R.string.action_select_inverse);
         }
         return super.onCreateOptionsMenu(menu);
     }
@@ -530,9 +569,6 @@ public class BreventActivity extends Activity implements ViewPager.OnPageChangeL
     }
 
     private void openFeedback() {
-        if (stopped) {
-            return;
-        }
         new AppsFeedbackFragment().show(getFragmentManager(), FRAGMENT_FEEDBACK);
     }
 
@@ -540,7 +576,8 @@ public class BreventActivity extends Activity implements ViewPager.OnPageChangeL
     @CallSuper
     public void onActivityResult(int requestCode, int resultCode, Intent data) {
         if (requestCode == REQUEST_CODE_SETTINGS) {
-            if (resultCode == Activity.RESULT_OK && data.getBooleanExtra(Intent.ACTION_CONFIGURATION_CHANGED, false)) {
+            if (resultCode == Activity.RESULT_OK &&
+                    data.getBooleanExtra(Intent.ACTION_CONFIGURATION_CHANGED, false)) {
                 updateConfiguration();
             }
         } else {
@@ -561,29 +598,38 @@ public class BreventActivity extends Activity implements ViewPager.OnPageChangeL
     }
 
     private void updateConfiguration() {
-        SharedPreferences preferences = PreferenceManager.getDefaultSharedPreferences(getApplicationContext());
-        if (!BreventUtils.supportStandby() && !"forcestop_only".equals(preferences.getString(BreventConfiguration.BREVENT_METHOD, ""))) {
-            preferences.edit().putString(BreventConfiguration.BREVENT_METHOD, "forcestop_only").apply();
+        SharedPreferences preferences =
+                PreferenceManager.getDefaultSharedPreferences(getApplicationContext());
+        BreventApplication application = (BreventApplication) getApplication();
+        if (!application.supportStandby() && !"forcestop_only".equals(
+                preferences.getString(BreventConfiguration.BREVENT_METHOD, ""))) {
+            preferences.edit().putString(BreventConfiguration.BREVENT_METHOD,
+                    "forcestop_only").apply();
         }
         BreventConfiguration configuration = new BreventConfiguration(getToken(), preferences);
         mHandler.obtainMessage(MESSAGE_BREVENT_REQUEST, configuration).sendToTarget();
+
         ComponentName componentName = new ComponentName(this, BreventReceiver.class);
         PackageManager packageManager = getPackageManager();
         int componentEnabled = packageManager.getComponentEnabledSetting(componentName);
-        if (configuration.allowRoot) {
+        boolean allowReceiver = preferences.getBoolean(SettingsFragment.BREVENT_ALLOW_RECEIVER,
+                SettingsFragment.DEFAULT_BREVENT_ALLOW_RECEIVER);
+        if (configuration.allowRoot && allowReceiver) {
             if (componentEnabled != PackageManager.COMPONENT_ENABLED_STATE_ENABLED) {
-                packageManager.setComponentEnabledSetting(componentName, PackageManager.COMPONENT_ENABLED_STATE_ENABLED, PackageManager.DONT_KILL_APP);
+                packageManager.setComponentEnabledSetting(componentName,
+                        PackageManager.COMPONENT_ENABLED_STATE_ENABLED, PackageManager.DONT_KILL_APP);
             }
         } else {
             if (componentEnabled == PackageManager.COMPONENT_ENABLED_STATE_ENABLED) {
-                packageManager.setComponentEnabledSetting(componentName, PackageManager.COMPONENT_ENABLED_STATE_DISABLED, PackageManager.DONT_KILL_APP);
+                packageManager.setComponentEnabledSetting(componentName,
+                        PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+                        PackageManager.DONT_KILL_APP);
             }
         }
     }
 
     private void openSettings() {
         Intent intent = new Intent(this, BreventSettings.class);
-        intent.putExtra(Intent.EXTRA_ALARM_COUNT, mGcm.size());
         startActivityForResult(intent, REQUEST_CODE_SETTINGS);
     }
 
@@ -682,7 +728,8 @@ public class BreventActivity extends Activity implements ViewPager.OnPageChangeL
         boolean appBarHidden = appBar.getHeight() + offset == 0;
         if (appBarHidden != mAppBarHidden) {
             mAppBarHidden = appBarHidden;
-            getWindow().getDecorView().setSystemUiVisibility(mAppBarHidden ? View.SYSTEM_UI_FLAG_LOW_PROFILE : 0);
+            getWindow().getDecorView().setSystemUiVisibility(
+                    mAppBarHidden ? View.SYSTEM_UI_FLAG_LOW_PROFILE : 0);
         }
     }
 
@@ -711,11 +758,13 @@ public class BreventActivity extends Activity implements ViewPager.OnPageChangeL
             AppsSnackbarCallback callback = new AppsSnackbarCallback(mHandler, uiHandler, response);
             Snackbar snackbar;
             if (response.undoable) {
-                String message = getString(response.brevent ? R.string.action_brevent_results : R.string.action_restore_results, response.packageNames.size());
+                String message = getString(response.brevent ? R.string.action_brevent_results :
+                        R.string.action_restore_results, response.packageNames.size());
                 snackbar = Snackbar.make(mCoordinator, message, Snackbar.LENGTH_LONG);
                 snackbar.setAction(R.string.action_snackbar_undo, callback);
             } else {
-                snackbar = Snackbar.make(mCoordinator, R.string.action_snackbar_undone, Snackbar.LENGTH_LONG);
+                snackbar = Snackbar.make(mCoordinator, R.string.action_snackbar_undone,
+                        Snackbar.LENGTH_LONG);
             }
             snackbar.addCallback(callback);
             snackbar.show();
@@ -728,17 +777,23 @@ public class BreventActivity extends Activity implements ViewPager.OnPageChangeL
         } else {
             mPriority.removeAll(breventPriority.packageNames);
         }
-        AppsFragment fragment = getFragment();
-        fragment.update(breventPriority.packageNames);
+        if (mAdapter != null) {
+            AppsFragment fragment = getFragment();
+            fragment.update(breventPriority.packageNames);
+        }
     }
 
     private void onBreventPriorityResponse(BreventPriority response) {
         if (!response.packageNames.isEmpty()) {
-            uiHandler.obtainMessage(BreventActivity.UI_MESSAGE_UPDATE_PRIORITY, response).sendToTarget();
+            uiHandler.obtainMessage(BreventActivity.UI_MESSAGE_UPDATE_PRIORITY,
+                    response).sendToTarget();
         }
     }
 
     private void onBreventStatusResponse(BreventStatus status) {
+        BreventApplication application = (BreventApplication) getApplication();
+        application.updateStatus(status);
+
         mProcesses.clear();
         mProcesses.putAll(status.mProcesses);
 
@@ -755,18 +810,25 @@ public class BreventActivity extends Activity implements ViewPager.OnPageChangeL
         for (String packageName : status.mTrustAgents) {
             mImportant.put(packageName, IMPORTANT_TRUST_AGENT);
         }
-        resolveFavoritePackages(mFavorite);
-        resolveGcmPackages(mGcm);
-
-        SharedPreferences sp = PreferenceManager.getDefaultSharedPreferences(this);
-        boolean showFramework = sp.getBoolean(SettingsFragment.SHOW_FRAMEWORK_APPS, SettingsFragment.DEFAULT_SHOW_FRAMEWORK_APPS);
-        boolean showAllApps = sp.getBoolean(SettingsFragment.SHOW_ALL_APPS, SettingsFragment.DEFAULT_SHOW_ALL_APPS);
-        if (mAdapter == null) {
-            mAdapter = new AppsPagerAdapter(getFragmentManager(), mTitles, showFramework);
-        } else {
-            mAdapter.setShowFramework(showFramework);
+        for (String packageName : status.mAndroidProcesses) {
+            mImportant.put(packageName, IMPORTANT_ANDROID);
         }
-        mAdapter.setShowAllApps(showAllApps);
+        resolveFavoritePackages(mFavorite);
+        if (((BreventApplication) getApplication()).supportStopped()) {
+            resolveGcmPackages(mGcm);
+        }
+
+        int installedCount = getPackageManager().getInstalledPackages(0).size();
+        if (mAdapter == null) {
+            mAdapter = new AppsPagerAdapter(getFragmentManager(), mTitles);
+            mInstalledCount = installedCount;
+        } else if (mInstalledCount != installedCount) {
+            mInstalledCount = installedCount;
+            mAdapter.setExpired();
+        }
+        if (uiHandler == null) {
+            return;
+        }
         uiHandler.sendEmptyMessage(UI_MESSAGE_HIDE_PROGRESS);
         uiHandler.sendEmptyMessage(UI_MESSAGE_SHOW_PAGER);
 
@@ -788,7 +850,8 @@ public class BreventActivity extends Activity implements ViewPager.OnPageChangeL
         }
         if (!importantBrevented.isEmpty()) {
             UILog.i("will unbrevent: " + importantBrevented);
-            BreventPackages breventPackages = new BreventPackages(false, getToken(), importantBrevented);
+            BreventPackages breventPackages =
+                    new BreventPackages(false, getToken(), importantBrevented);
             breventPackages.undoable = false;
             mHandler.obtainMessage(MESSAGE_BREVENT_REQUEST, breventPackages).sendToTarget();
         }
@@ -809,7 +872,8 @@ public class BreventActivity extends Activity implements ViewPager.OnPageChangeL
         return Settings.Secure.getString(getContentResolver(), name);
     }
 
-    private void resolveImportantPackages(SimpleArrayMap<String, SparseIntArray> processes, SimpleArrayMap<String, Integer> packageNames) {
+    private void resolveImportantPackages(SimpleArrayMap<String, SparseIntArray> processes,
+                                          SimpleArrayMap<String, Integer> packageNames) {
         // input method
         String input = getPackageName(getSecureSetting(Settings.Secure.DEFAULT_INPUT_METHOD));
         if (input != null) {
@@ -827,15 +891,28 @@ public class BreventActivity extends Activity implements ViewPager.OnPageChangeL
         // sms
         packageNames.put(getSecureSetting(HideApiOverride.SMS_DEFAULT_APPLICATION), IMPORTANT_SMS);
 
+        // dialer
+        String dialer = getDefaultApp(Intent.ACTION_DIAL);
+        if (dialer != null) {
+            packageNames.put(dialer, IMPORTANT_DIALER);
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             // dialer
-            String dialer = ((TelecomManager) getSystemService(TELECOM_SERVICE)).getDefaultDialerPackage();
+            dialer = ((TelecomManager) getSystemService(TELECOM_SERVICE))
+                    .getDefaultDialerPackage();
             if (dialer != null) {
                 packageNames.put(dialer, IMPORTANT_DIALER);
             }
+        }
 
-            // assistant
-            String assistant = getPackageName(getSecureSetting(HideApiOverride.ASSISTANT));
+        // assistant
+        String assistant;
+        assistant = getPackageName(getSecureSetting(HideApiOverride.getVoiceInteractionService()));
+        if (assistant != null) {
+            packageNames.put(assistant, IMPORTANT_ASSISTANT);
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            assistant = getPackageName(getSecureSetting(HideApiOverride.getAssistant()));
             if (assistant != null) {
                 packageNames.put(assistant, IMPORTANT_ASSISTANT);
             }
@@ -843,26 +920,33 @@ public class BreventActivity extends Activity implements ViewPager.OnPageChangeL
 
         // webview
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            String webView = Settings.Global.getString(getContentResolver(), HideApiOverrideN.WEBVIEW_PROVIDER);
+            String webView = Settings.Global.getString(getContentResolver(),
+                    HideApiOverrideN.WEBVIEW_PROVIDER);
             packageNames.put(webView, IMPORTANT_WEBVIEW);
         }
 
         // launcher
         Intent intent = new Intent(Intent.ACTION_MAIN);
         intent.addCategory(Intent.CATEGORY_HOME);
-        ResolveInfo resolveInfo = getPackageManager().resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY);
+        ResolveInfo resolveInfo =
+                getPackageManager().resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY);
         if (resolveInfo != null) {
             mLauncher = resolveInfo.activityInfo.packageName;
             packageNames.put(mLauncher, IMPORTANT_HOME);
         }
 
-        AccessibilityManager accessibilityManager = (AccessibilityManager) getSystemService(Context.ACCESSIBILITY_SERVICE);
-        List<AccessibilityServiceInfo> enabledAccessibilityServiceList = accessibilityManager.getEnabledAccessibilityServiceList(AccessibilityServiceInfo.FEEDBACK_ALL_MASK);
+        AccessibilityManager accessibilityManager =
+                (AccessibilityManager) getSystemService(Context.ACCESSIBILITY_SERVICE);
+        List<AccessibilityServiceInfo> enabledAccessibilityServiceList =
+                accessibilityManager.getEnabledAccessibilityServiceList(
+                        AccessibilityServiceInfo.FEEDBACK_ALL_MASK);
         for (AccessibilityServiceInfo accessibilityServiceInfo : enabledAccessibilityServiceList) {
-            packageNames.put(accessibilityServiceInfo.getResolveInfo().serviceInfo.packageName, IMPORTANT_ACCESSIBILITY);
+            packageNames.put(accessibilityServiceInfo.getResolveInfo().serviceInfo.packageName,
+                    IMPORTANT_ACCESSIBILITY);
         }
 
-        DevicePolicyManager devicePolicyManager = (DevicePolicyManager) getSystemService(Context.DEVICE_POLICY_SERVICE);
+        DevicePolicyManager devicePolicyManager =
+                (DevicePolicyManager) getSystemService(Context.DEVICE_POLICY_SERVICE);
         List<ComponentName> componentNames = devicePolicyManager.getActiveAdmins();
         if (componentNames != null) {
             for (ComponentName componentName : componentNames) {
@@ -883,6 +967,17 @@ public class BreventActivity extends Activity implements ViewPager.OnPageChangeL
         }
     }
 
+    private String getDefaultApp(String action) {
+        Intent intent = new Intent(action);
+        ResolveInfo resolveInfo = getPackageManager().resolveActivity(intent,
+                PackageManager.MATCH_DEFAULT_ONLY);
+        if (resolveInfo != null) {
+            return resolveInfo.activityInfo.packageName;
+        } else {
+            return null;
+        }
+    }
+
     private String getPackageName(String component) {
         if (component != null) {
             ComponentName componentName = ComponentName.unflattenFromString(component);
@@ -895,9 +990,10 @@ public class BreventActivity extends Activity implements ViewPager.OnPageChangeL
 
     private void resolveGcmPackages(Set<String> packageNames) {
         // gcm
-        List<PackageInfo> packageInfos = getPackageManager().getPackagesHoldingPermissions(new String[] {
-                "com.google.android.c2dm.permission.RECEIVE",
-        }, 0);
+        List<PackageInfo> packageInfos =
+                getPackageManager().getPackagesHoldingPermissions(new String[] {
+                        "com.google.android.c2dm.permission.RECEIVE",
+                }, 0);
         if (packageInfos != null) {
             Set<String> gcm = new ArraySet<>();
             for (PackageInfo packageInfo : packageInfos) {
@@ -915,23 +1011,16 @@ public class BreventActivity extends Activity implements ViewPager.OnPageChangeL
         // battery
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             try {
-                IDeviceIdleController deviceidle = IDeviceIdleController.Stub.asInterface(ServiceManager.getService("deviceidle"));
-                String[] fullPowerWhitelist = deviceidle.getFullPowerWhitelist();
-                if (fullPowerWhitelist != null) {
-                    for (String s : fullPowerWhitelist) {
+                IDeviceIdleController deviceidle = IDeviceIdleController.Stub.asInterface(
+                        ServiceManager.getService("deviceidle"));
+                String[] fullPowerWhiteList = deviceidle.getFullPowerWhitelist();
+                if (fullPowerWhiteList != null) {
+                    for (String s : fullPowerWhiteList) {
                         packageNames.put(s, IMPORTANT_BATTERY);
                     }
                 }
             } catch (RemoteException e) {
                 // do nothing
-            }
-        }
-
-        // tile
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            String tiles = getSecureSetting(HideApiOverrideN.QS_TILES);
-            for (String packageName : TileUtils.parseTiles(tiles)) {
-                packageNames.put(packageName, IMPORTANT_TILE);
             }
         }
 
@@ -941,6 +1030,13 @@ public class BreventActivity extends Activity implements ViewPager.OnPageChangeL
     }
 
     public void showViewPager() {
+        SharedPreferences sp = PreferenceManager.getDefaultSharedPreferences(this);
+        boolean showAllApps = sp.getBoolean(SettingsFragment.SHOW_ALL_APPS,
+                SettingsFragment.DEFAULT_SHOW_ALL_APPS);
+        boolean showFramework = sp.getBoolean(SettingsFragment.SHOW_FRAMEWORK_APPS,
+                SettingsFragment.DEFAULT_SHOW_FRAMEWORK_APPS);
+        mAdapter.setShowAllApps(showAllApps);
+        mAdapter.setShowFramework(showFramework);
         if (mPager.getAdapter() == null) {
             mPager.setAdapter(mAdapter);
         } else {
@@ -963,11 +1059,13 @@ public class BreventActivity extends Activity implements ViewPager.OnPageChangeL
         } else {
             mBrevent.removeAll(breventPackages.packageNames);
         }
-        AppsFragment fragment = getFragment();
-        if (!breventPackages.undoable) {
-            fragment.select(breventPackages.packageNames);
-        } else {
-            fragment.update(breventPackages.packageNames);
+        if (mAdapter != null) {
+            AppsFragment fragment = getFragment();
+            if (!breventPackages.undoable) {
+                fragment.select(breventPackages.packageNames);
+            } else {
+                fragment.update(breventPackages.packageNames);
+            }
         }
     }
 
@@ -978,18 +1076,6 @@ public class BreventActivity extends Activity implements ViewPager.OnPageChangeL
 
     public void showSnackbar(String message) {
         Snackbar.make(mCoordinator, message, Snackbar.LENGTH_LONG).show();
-    }
-
-    public int resolveColor(int resId) {
-        TypedValue tv = new TypedValue();
-        getTheme().resolveAttribute(resId, tv, true);
-        if (tv.type == TypedValue.TYPE_NULL) {
-            return Color.BLACK;
-        } else if (tv.type >= TypedValue.TYPE_FIRST_COLOR_INT && tv.type <= TypedValue.TYPE_LAST_COLOR_INT) {
-            return tv.data;
-        } else {
-            return ContextCompat.getColor(this, tv.resourceId);
-        }
     }
 
     public String getLabel(String label, String packageName) {
@@ -1022,8 +1108,6 @@ public class BreventActivity extends Activity implements ViewPager.OnPageChangeL
                 return getString(R.string.important_assistant, label);
             case IMPORTANT_WEBVIEW:
                 return getString(R.string.important_webview, label);
-            case IMPORTANT_TILE:
-                return getString(R.string.important_tile, label);
             case IMPORTANT_ACCESSIBILITY:
                 return getString(R.string.important_accessibility, label);
             case IMPORTANT_DEVICE_ADMIN:
@@ -1045,7 +1129,8 @@ public class BreventActivity extends Activity implements ViewPager.OnPageChangeL
     }
 
     public void updatePriority(String packageName, boolean priority) {
-        BreventPriority breventPriority = new BreventPriority(priority, getToken(), Collections.singleton(packageName));
+        BreventPriority breventPriority =
+                new BreventPriority(priority, getToken(), Collections.singleton(packageName));
         mHandler.obtainMessage(MESSAGE_BREVENT_REQUEST, breventPriority).sendToTarget();
     }
 
@@ -1054,15 +1139,39 @@ public class BreventActivity extends Activity implements ViewPager.OnPageChangeL
     }
 
     public void showSuccess() {
-        mSnackBar = Snackbar.make(mCoordinator, R.string.brevent_service_success, Snackbar.LENGTH_INDEFINITE);
+        mSnackBar = Snackbar.make(mCoordinator, R.string.brevent_service_success,
+                Snackbar.LENGTH_INDEFINITE);
         mSnackBar.show();
     }
 
     public void unbrevent(String packageName) {
         UILog.i("will unbrevent: " + packageName);
-        BreventPackages breventPackages = new BreventPackages(false, getToken(), Collections.singleton(packageName));
+        BreventPackages breventPackages =
+                new BreventPackages(false, getToken(), Collections.singleton(packageName));
         breventPackages.undoable = false;
         mHandler.obtainMessage(MESSAGE_BREVENT_REQUEST, breventPackages).sendToTarget();
+    }
+
+    public static Signature[] getSignatures(PackageManager packageManager, String packageName) {
+        try {
+            ApplicationInfo applicationInfo = packageManager.getApplicationInfo(packageName, 0);
+            String codePath = applicationInfo.sourceDir;
+            PackageParser.Package pkg = new PackageParser.Package(codePath);
+            pkg.baseCodePath = codePath;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                PackageParser.collectCertificates(pkg, PackageManager.GET_SIGNATURES);
+            } else {
+                HideApiOverrideM.collectCertificates(pkg, PackageManager.GET_SIGNATURES);
+            }
+            return pkg.mSignatures;
+        } catch (PackageManager.NameNotFoundException | PackageParser.PackageParserException e) {
+            // do nothing
+            return null;
+        }
+    }
+
+    public synchronized boolean isStopped() {
+        return stopped;
     }
 
 }

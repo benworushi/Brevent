@@ -34,6 +34,7 @@ public class BreventSettings extends DonateActivity implements View.OnClickListe
         setContentView(R.layout.activity_settings);
 
         Toolbar toolbar = (Toolbar) findViewById(R.id.toolbar);
+        ColorUtils.fixToolbar(this, toolbar);
         setActionBar(toolbar);
         ActionBar actionBar = getActionBar();
         if (actionBar != null) {
@@ -42,8 +43,6 @@ public class BreventSettings extends DonateActivity implements View.OnClickListe
 
         settingsFragment = new SettingsFragment();
         Bundle arguments = settingsFragment.getArguments();
-        arguments.putAll(getIntent().getExtras());
-        arguments.putBoolean(SettingsFragment.HAS_PLAY, hasPlay());
         arguments.putBoolean(SettingsFragment.IS_PLAY, isPlay());
 
         // Display the fragment as the main content.
@@ -51,7 +50,8 @@ public class BreventSettings extends DonateActivity implements View.OnClickListe
                 .replace(R.id.content, settingsFragment)
                 .commit();
 
-        SharedPreferences preferences = PreferenceManager.getDefaultSharedPreferences(getApplicationContext());
+        SharedPreferences preferences =
+                PreferenceManager.getDefaultSharedPreferences(getApplicationContext());
         mConfiguration = new BreventConfiguration(null, preferences);
     }
 
@@ -82,7 +82,8 @@ public class BreventSettings extends DonateActivity implements View.OnClickListe
 
     @Override
     public void finish() {
-        SharedPreferences preferences = PreferenceManager.getDefaultSharedPreferences(getApplicationContext());
+        SharedPreferences preferences =
+                PreferenceManager.getDefaultSharedPreferences(getApplicationContext());
         BreventConfiguration configuration = new BreventConfiguration(null, preferences);
         Intent data = new Intent();
         data.putExtra(Intent.ACTION_CONFIGURATION_CHANGED, mConfiguration.update(configuration));

@@ -16,6 +16,11 @@ android {
         Properties properties = new Properties()
         properties.load(new FileInputStream(rootProject.file('ant.properties')))
 
+        dexOptions {
+            additionalParameters += '--main-dex-list=build/maindexlist.txt'
+            additionalParameters += '--minimal-main-dex'
+        }
+
         defaultConfig {
             versionCode rootProject.versionCode
             versionName rootProject.versionName
@@ -30,7 +35,10 @@ android {
             buildConfigField 'String', 'FEEDBACK', properties['build.feedback']
             buildConfigField 'String', 'EMAIL', properties['build.email']
             buildConfigField 'String', 'PROJECT', properties['build.project']
+            buildConfigField 'byte[]', 'SIGNATURE', properties['build.signature']
+            buildConfigField 'char[]', 'SERVER', properties['build.server']
             resConfigs 'en', 'zh-rCN', 'zh-rTW'
+            multiDexEnabled true
         }
 
         signingConfigs {
@@ -60,6 +68,8 @@ android {
         }
     } else {
         defaultConfig {
+            versionCode rootProject.versionCode
+            versionName rootProject.versionName
             minSdkVersion rootProject.minSdkVersion
             maxSdkVersion rootProject.targetSdkVersion
             targetSdkVersion rootProject.targetSdkVersion
@@ -71,6 +81,8 @@ android {
             buildConfigField 'String', 'FEEDBACK', 'null'
             buildConfigField 'String', 'EMAIL', 'null'
             buildConfigField 'String', 'PROJECT', 'null'
+            buildConfigField 'byte[]', 'SIGNATURE', 'null'
+            buildConfigField 'char[]', 'SERVER', 'null'
         }
     }
 
@@ -107,12 +119,34 @@ dependencies {
     compile "com.android.support:design:${rootProject.supportLibraryVersion}"
     compile project(':donation')
     compile project(':brevent-protocol')
+    compile project(':brevent-override-m')
+    compile project(':log-reader')
     compile 'eu.chainfire:libsuperuser:1.0.0.201608240809'
 }
 
-if (rootProject.file('ant.properties').exists()) {
+if (rootProject.file('brevent-server').exists()) {
     dependencies {
         compile project(':brevent-server')
+    }
+
+    task genMainDexList {
+        doLast {
+            def path = fileTree(dir: 'build', include: '**/*.jar').asPath
+            def writer = new PrintWriter('build/maindexlist.txt')
+            def file = new java.util.zip.ZipFile(path)
+            file.entries().each {
+                if (!it.name.startsWith('me/piebridge/brevent/server')) {
+                    writer.println(it.name)
+                }
+            }
+            writer.close()
+        }
+    }
+
+    tasks.whenTaskAdded { task ->
+        if (task.name == 'transformClassesAndResourcesWithProguardForRelease') {
+            task.finalizedBy genMainDexList
+        }
     }
 }
 

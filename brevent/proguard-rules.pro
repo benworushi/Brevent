@@ -23,9 +23,16 @@
 
 -keep class com.android.vending.billing.**
 
+-keep public class me.piebridge.brevent.protocol.Brevent** {
+    public *;
+}
+
+-keep public class me.piebridge.brevent.override.HideApiOverride** {
+    public *;
+}
+
 -keep class me.piebridge.brevent.server.BreventServer {
-    public static void main(java.lang.String[]);
-    public static void startBreventServer();
+    public <methods>;
 }
 
 -keep class me.piebridge.EventHandler { *; }
@@ -33,6 +40,8 @@
 -keep class me.piebridge.LogReader { *; }
 
 -dontnote eu.chainfire.libsuperuser.Shell*
+
+-dontnote me.piebridge.brevent.server.BreventServer
 
 -dontwarn me.piebridge.brevent.override.HideApiOverride*
 

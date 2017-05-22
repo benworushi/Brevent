@@ -12,7 +12,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 
-import me.piebridge.brevent.protocol.TimeUtils;
+import me.piebridge.brevent.protocol.BreventStatus;
 
 /**
  * handler for apps item
@@ -72,11 +72,12 @@ public class AppsItemHandler extends Handler {
     }
 
     private boolean updateInactiveTime(Set<Integer> positions) {
-        final int now = TimeUtils.now();
+        final int now = BreventStatus.now();
         for (int position : positions) {
             AppsItemViewHolder viewHolder = getViewHolder(position);
             if (viewHolder != null) {
-                viewHolder.inactiveView.setText(DateUtils.formatElapsedTime(now - viewHolder.inactive));
+                viewHolder.inactiveView.setText(
+                        DateUtils.formatElapsedTime(now - viewHolder.inactive));
             }
         }
         return true;
@@ -109,7 +110,7 @@ public class AppsItemHandler extends Handler {
             return Collections.emptySet();
         }
         Set<Integer> positions = new ArraySet<>();
-        final int now = TimeUtils.now();
+        final int now = BreventStatus.now();
         last = Math.min(last, appsInfoList.size() - 1);
         for (int i = first; i <= last; ++i) {
             AppsInfo info = appsInfoList.get(i);
@@ -121,7 +122,8 @@ public class AppsItemHandler extends Handler {
                 AppsItemViewHolder viewHolder = getViewHolder(i);
                 if (viewHolder != null) {
                     viewHolder.inactive = inactive;
-                    viewHolder.inactiveView.setText(inactive > 0 ? DateUtils.formatElapsedTime(now - inactive) : null);
+                    viewHolder.inactiveView.setText(
+                            inactive > 0 ? DateUtils.formatElapsedTime(now - inactive) : null);
                 }
             }
         }

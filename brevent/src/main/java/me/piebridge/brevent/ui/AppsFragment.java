@@ -5,9 +5,7 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
-import android.content.pm.PackageParser;
 import android.content.pm.Signature;
-import android.os.Build;
 import android.os.Bundle;
 import android.support.annotation.UiThread;
 import android.support.v7.widget.DividerItemDecoration;
@@ -23,7 +21,6 @@ import java.util.List;
 
 import me.piebridge.brevent.BuildConfig;
 import me.piebridge.brevent.R;
-import me.piebridge.brevent.override.HideApiOverrideM;
 
 /**
  * Created by thom on 2017/1/25.
@@ -51,7 +48,8 @@ public abstract class AppsFragment extends Fragment {
     private Signature[] frameworkSignatures;
 
     @Override
-    public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
+    public View onCreateView(LayoutInflater inflater, ViewGroup container,
+                             Bundle savedInstanceState) {
         if (mView == null) {
             mView = inflater.inflate(R.layout.fragment_brevent, container, false);
             mRecycler = (RecyclerView) mView.findViewById(R.id.recycler);
@@ -79,7 +77,10 @@ public abstract class AppsFragment extends Fragment {
     private void lazyLoad() {
         if (mVisible && mResumed && mRecycler != null) {
             if (mRecycler.getAdapter() == null) {
-                ((BreventActivity) getActivity()).showFragmentAsync(this, 0);
+                BreventActivity activity = (BreventActivity) getActivity();
+                if (activity != null && !activity.isStopped()) {
+                    activity.showFragmentAsync(this, 0);
+                }
             } else if (mExpired) {
                 mExpired = false;
                 mAdapter.retrievePackagesAsync();
@@ -121,7 +122,8 @@ public abstract class AppsFragment extends Fragment {
         }
         mRecycler.addOnScrollListener(new AppsScrollListener(mHandler));
         mRecycler.setLayoutManager(new LinearLayoutManager(getActivity()));
-        mRecycler.addItemDecoration(new DividerItemDecoration(mRecycler.getContext(), LinearLayoutManager.VERTICAL));
+        mRecycler.addItemDecoration(
+                new DividerItemDecoration(mRecycler.getContext(), LinearLayoutManager.VERTICAL));
         if (mAdapter == null) {
             mAdapter = new AppsItemAdapter(this, mHandler);
         } else {
@@ -183,8 +185,10 @@ public abstract class AppsFragment extends Fragment {
     }
 
     protected final boolean isFrameworkPackage(PackageManager packageManager, String packageName) {
-        if (packageManager.checkSignatures(PACKAGE_FRAMEWORK, BuildConfig.APPLICATION_ID) != PackageManager.SIGNATURE_MATCH) {
-            return packageManager.checkSignatures(PACKAGE_FRAMEWORK, packageName) == PackageManager.SIGNATURE_MATCH;
+        if (packageManager.checkSignatures(PACKAGE_FRAMEWORK, BuildConfig.APPLICATION_ID) !=
+                PackageManager.SIGNATURE_MATCH) {
+            return packageManager.checkSignatures(PACKAGE_FRAMEWORK, packageName) ==
+                    PackageManager.SIGNATURE_MATCH;
         } else {
             SharedPreferences preferences = null;
             Context context = getActivity();
@@ -194,7 +198,8 @@ public abstract class AppsFragment extends Fragment {
                     return preferences.getBoolean(packageName, false);
                 }
             }
-            boolean signature = Arrays.equals(getFrameworkSignatures(packageManager), getSignatures(packageManager, packageName));
+            boolean signature = Arrays.equals(getFrameworkSignatures(packageManager),
+                    BreventActivity.getSignatures(packageManager, packageName));
             if (preferences != null) {
                 preferences.edit().putBoolean(packageName, signature).apply();
             }
@@ -206,28 +211,12 @@ public abstract class AppsFragment extends Fragment {
         if (frameworkSignatures == null) {
             synchronized (this) {
                 if (frameworkSignatures == null) {
-                    frameworkSignatures = getSignatures(packageManager, PACKAGE_FRAMEWORK);
+                    frameworkSignatures = BreventActivity.getSignatures(packageManager,
+                            PACKAGE_FRAMEWORK);
                 }
             }
         }
         return frameworkSignatures;
-    }
-
-    private Signature[] getSignatures(PackageManager packageManager, String packageName) {
-        try {
-            String dexPath = packageManager.getApplicationInfo(packageName, 0).sourceDir;
-            PackageParser.Package pkg = new PackageParser.Package(dexPath);
-            pkg.baseCodePath = dexPath;
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                PackageParser.collectCertificates(pkg, PackageManager.GET_SIGNATURES);
-            } else {
-                HideApiOverrideM.collectCertificates(pkg, PackageManager.GET_SIGNATURES);
-            }
-            return pkg.mSignatures;
-        } catch (PackageManager.NameNotFoundException | PackageParser.PackageParserException e) {
-            UILog.d("Can't get signatures for " + packageName, e);
-            return null;
-        }
     }
 
     public boolean supportAllApps() {

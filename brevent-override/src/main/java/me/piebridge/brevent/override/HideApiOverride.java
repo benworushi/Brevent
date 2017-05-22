@@ -3,7 +3,6 @@ package me.piebridge.brevent.override;
 import android.app.ActivityManager;
 import android.app.AppOpsManager;
 import android.hardware.usb.UsbManager;
-import android.os.Bundle;
 import android.os.Process;
 import android.os.UserHandle;
 import android.provider.Settings;
@@ -29,29 +28,21 @@ public class HideApiOverride {
     public static final String ACTION_USB_STATE = getActionUsbState();
     public static final String USB_CONNECTED = getUsbConnected();
 
-    public static final String CALL_METHOD_USER_KEY = getCallMethodUserKey();
-    public static final String CALL_METHOD_GET_SECURE = getCallMethodGetSecure();
-    public static final String CALL_METHOD_GET_GLOBAL = getCallMethodGetGlobal();
-
     public static final String SMS_DEFAULT_APPLICATION = getSmsDefaultApplication();
-    public static final String DIALER_DEFAULT_APPLICATION = getDialerDefaultApplication();
-    public static final String ASSISTANT = getAssistant();
 
     private static final int ROOT_UID = getRootUid();
     private static final int SHELL_UID = getShellUid();
 
     private static final int FLAG_PERSISTENT = getFlagPersistent();
     private static final int PROCESS_STATE_CACHED_ACTIVITY = getProcessStateCachedActivity();
-    private static final int PROCESS_STATE_BOUND_FOREGROUND_SERVICE = getProcessStateBoundForegroundService();
-    private static final int PROCESS_STATE_FOREGROUND_SERVICE = getProcessStateForegroundService();
+    private static int processStateBoundForegroundService;
+    private static int processStateForegroundService;
     private static final int PROCESS_STATE_SERVICE = getProcessStateService();
     private static final int PROCESS_STATE_RECEIVER = getProcessStateReceiver();
     private static final int PROCESS_STATE_TOP = getProcessStateTop();
 
     private static final int RECENT_IGNORE_HOME_STACK_TASKS = getRecentIgnoreHomeStackTasks();
     private static final int RECENT_INCLUDE_PROFILES = getRecentIncludeProfiles();
-    private static final int RECENT_INGORE_DOCKED_STACK_TOP_TASK = getRecentIngoreDockedStackTopTask();
-    private static final int RECENT_INGORE_PINNED_STACK_TASKS = getRecentIngorePinnedStackTasks();
 
     private HideApiOverride() {
 
@@ -65,8 +56,24 @@ public class HideApiOverride {
         }
     }
 
+    public static int getUserId() {
+        return UserHandle.myUserId();
+    }
+
+    public static int getUserId(int uid) {
+        return UserHandle.getUserId(uid);
+    }
+
+    public static int myPpid() {
+        return Process.myPpid();
+    }
+
     public static boolean isRoot(int uid) {
         return uid == ROOT_UID;
+    }
+
+    public static boolean isShell(int uid) {
+        return uid == SHELL_UID;
     }
 
     public static int getCurrentUser() {
@@ -87,8 +94,8 @@ public class HideApiOverride {
     }
 
     public static boolean isService(int processState) {
-        return processState == PROCESS_STATE_BOUND_FOREGROUND_SERVICE
-                || processState == PROCESS_STATE_FOREGROUND_SERVICE
+        return processState == getProcessStateBoundForegroundService()
+                || processState == getProcessStateForegroundService()
                 || processState == PROCESS_STATE_SERVICE
                 || processState == PROCESS_STATE_RECEIVER;
     }
@@ -110,8 +117,8 @@ public class HideApiOverride {
         return RECENT_IGNORE_HOME_STACK_TASKS |
                 ActivityManager.RECENT_IGNORE_UNAVAILABLE |
                 RECENT_INCLUDE_PROFILES |
-                RECENT_INGORE_DOCKED_STACK_TOP_TASK |
-                RECENT_INGORE_PINNED_STACK_TASKS;
+                getRecentIngoreDockedStackTopTask() |
+                getRecentIngorePinnedStackTasks();
     }
 
     public static int getRecentFlagsM() {
@@ -121,21 +128,7 @@ public class HideApiOverride {
     }
 
     public static boolean isForegroundService(int processState) {
-        return processState == PROCESS_STATE_FOREGROUND_SERVICE;
-    }
-
-    public static String resolveCallingPackage(int uid) {
-        if (uid == ROOT_UID) {
-            return "root";
-        } else if (uid == SHELL_UID) {
-            return "com.android.shell";
-        } else {
-            return null;
-        }
-    }
-
-    public static String getPairValue(Bundle result) {
-        return result.getPairValue();
+        return processState == getProcessStateForegroundService();
     }
 
     public static int getPackageOpsUid(Object packageOps) {
@@ -257,6 +250,15 @@ public class HideApiOverride {
         }
     }
 
+    public static String getVoiceInteractionService() {
+        try {
+            return Settings.Secure.VOICE_INTERACTION_SERVICE;
+        } catch (LinkageError e) {
+            Log.w(TAG, "Can't find Settings.Secure.VOICE_INTERACTION_SERVICE");
+            return "voice_interaction_service";
+        }
+    }
+
     private static int getRootUid() {
         try {
             return Process.ROOT_UID;
@@ -294,6 +296,13 @@ public class HideApiOverride {
     }
 
     private static int getProcessStateBoundForegroundService() {
+        if (processStateBoundForegroundService == 0) {
+            processStateBoundForegroundService = getProcessStateBoundForegroundServiceM();
+        }
+        return processStateBoundForegroundService;
+    }
+
+    private static int getProcessStateBoundForegroundServiceM() {
         try {
             return ActivityManager.PROCESS_STATE_BOUND_FOREGROUND_SERVICE;
         } catch (LinkageError e) {
@@ -303,6 +312,13 @@ public class HideApiOverride {
     }
 
     private static int getProcessStateForegroundService() {
+        if (processStateForegroundService == 0) {
+            processStateForegroundService = getProcessStateForegroundServiceM();
+        }
+        return processStateForegroundService;
+    }
+
+    private static int getProcessStateForegroundServiceM() {
         try {
             return ActivityManager.PROCESS_STATE_FOREGROUND_SERVICE;
         } catch (LinkageError e) {
@@ -347,7 +363,8 @@ public class HideApiOverride {
         try {
             return ActivityManager.RECENT_IGNORE_HOME_AND_RECENTS_STACK_TASKS;
         } catch (LinkageError e) {
-            Log.w(TAG, "Can't find ActivityManager.RECENT_IGNORE_HOME_STACK_TASKS nor ActivityManager.RECENT_IGNORE_HOME_AND_RECENTS_STACK_TASKS");
+            Log.w(TAG, "Can't find ActivityManager.RECENT_IGNORE_HOME_STACK_TASKS" +
+                    " nor ActivityManager.RECENT_IGNORE_HOME_AND_RECENTS_STACK_TASKS");
         }
         return 0x0008;
     }

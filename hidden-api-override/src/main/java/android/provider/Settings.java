@@ -46,10 +46,10 @@ public class Settings {
         public static String ASSISTANT = "assistant";
 
         /**
-         * Holds comma separated list of ordering of QS tiles.
+         * The currently selected voice interaction service flattened ComponentName.
          * @hide
          */
-        public static String QS_TILES = "sysui_qs_tiles";
+        public static String VOICE_INTERACTION_SERVICE = "voice_interaction_service";
 
     }
 

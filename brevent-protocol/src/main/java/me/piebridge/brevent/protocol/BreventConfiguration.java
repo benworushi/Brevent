@@ -24,8 +24,8 @@ public class BreventConfiguration extends BreventToken {
     public static final String BREVENT_ALLOW_ROOT = "brevent_allow_root";
     public static final boolean DEFAULT_BREVENT_ALLOW_ROOT = false;
 
-    public static final String BREVENT_ALLOW_GCM = "brevent_allow_gcm";
-    public static final boolean DEFAULT_BREVENT_ALLOW_GCM = false;
+    public static final String BREVENT_OPTIMIZE_VPN = "brevent_optimize_vpn";
+    public static final boolean DEFAULT_BREVENT_OPTIMIZE_VPN = false;
 
     public static final String BREVENT_METHOD = "brevent_method";
     public static final int BREVENT_METHOD_STANDBY_FORCE_STOP = 1;
@@ -37,6 +37,15 @@ public class BreventConfiguration extends BreventToken {
     public static final int DEFAULT_BREVENT_STANDBY_TIMEOUT = 3600;
     public static final int MIN_BREVENT_STANDBY_TIMEOUT = 900;
 
+    public static final String BREVENT_CHECK_NOTIFICATION = "brevent_check_notification";
+    public static final boolean DEFAULT_BREVENT_CHECK_NOTIFICATION = true;
+
+    public static final String BREVENT_WHEN_REQUEST = "brevent_when_request";
+    public static final boolean DEFAULT_BREVENT_WHEN_REQUEST = false;
+
+    public static final String BREVENT_ABNORMAL_BACK = "brevent_abnormal_back";
+    public static final boolean DEFAULT_BREVENT_ABNORMAL_BACK = false;
+
     public boolean autoUpdate = DEFAULT_BREVENT_AUTO_UPDATE;
 
     public int timeout = DEFAULT_BREVENT_TIMEOUT;
@@ -45,18 +54,32 @@ public class BreventConfiguration extends BreventToken {
 
     public int method = DEFAULT_BREVENT_METHOD;
 
-    public boolean allowGcm = DEFAULT_BREVENT_ALLOW_GCM;
+    public boolean optimizeVpn = DEFAULT_BREVENT_OPTIMIZE_VPN;
 
     public int standbyTimeout = DEFAULT_BREVENT_STANDBY_TIMEOUT;
+
+    public boolean checkNotification = DEFAULT_BREVENT_CHECK_NOTIFICATION;
+
+    public boolean breventRequest = DEFAULT_BREVENT_WHEN_REQUEST;
+
+    public boolean abnormalBack = DEFAULT_BREVENT_ABNORMAL_BACK;
 
     public BreventConfiguration(UUID token, SharedPreferences sharedPreferences) {
         super(CONFIGURATION, token);
         autoUpdate = sharedPreferences.getBoolean(BREVENT_AUTO_UPDATE, DEFAULT_BREVENT_AUTO_UPDATE);
-        setValue(BREVENT_TIMEOUT, sharedPreferences.getString(BREVENT_TIMEOUT, "" + DEFAULT_BREVENT_TIMEOUT));
+        setValue(BREVENT_TIMEOUT, sharedPreferences.getString(BREVENT_TIMEOUT,
+                "" + DEFAULT_BREVENT_TIMEOUT));
         allowRoot = sharedPreferences.getBoolean(BREVENT_ALLOW_ROOT, DEFAULT_BREVENT_ALLOW_ROOT);
         method = convertMethod(sharedPreferences.getString(BREVENT_METHOD, ""));
-        allowGcm = sharedPreferences.getBoolean(BREVENT_ALLOW_GCM, DEFAULT_BREVENT_ALLOW_GCM);
-        setValue(BREVENT_STANDBY_TIMEOUT, sharedPreferences.getString(BREVENT_STANDBY_TIMEOUT, "" + DEFAULT_BREVENT_STANDBY_TIMEOUT));
+        optimizeVpn = sharedPreferences.getBoolean(BREVENT_OPTIMIZE_VPN, DEFAULT_BREVENT_OPTIMIZE_VPN);
+        setValue(BREVENT_STANDBY_TIMEOUT, sharedPreferences.getString(BREVENT_STANDBY_TIMEOUT,
+                "" + DEFAULT_BREVENT_STANDBY_TIMEOUT));
+        checkNotification = sharedPreferences.getBoolean(BREVENT_CHECK_NOTIFICATION,
+                DEFAULT_BREVENT_CHECK_NOTIFICATION);
+        breventRequest =sharedPreferences.getBoolean(BREVENT_WHEN_REQUEST,
+                DEFAULT_BREVENT_WHEN_REQUEST);
+        abnormalBack = sharedPreferences.getBoolean(BREVENT_ABNORMAL_BACK,
+                DEFAULT_BREVENT_ABNORMAL_BACK);
     }
 
     private int convertMethod(String string) {
@@ -81,8 +104,11 @@ public class BreventConfiguration extends BreventToken {
         timeout = in.readInt();
         allowRoot = in.readInt() != 0;
         method = in.readInt();
-        allowGcm = in.readInt() != 0;
+        optimizeVpn = in.readInt() != 0;
         standbyTimeout = in.readInt();
+        checkNotification = in.readInt() != 0;
+        breventRequest = in.readInt() != 0;
+        abnormalBack = in.readInt() != 0;
     }
 
     @Override
@@ -92,8 +118,11 @@ public class BreventConfiguration extends BreventToken {
         dest.writeInt(timeout);
         dest.writeInt(allowRoot ? 1 : 0);
         dest.writeInt(method);
-        dest.writeInt(allowGcm ? 1 : 0);
+        dest.writeInt(optimizeVpn ? 1 : 0);
         dest.writeInt(standbyTimeout);
+        dest.writeInt(checkNotification ? 1 : 0);
+        dest.writeInt(breventRequest ? 1 : 0);
+        dest.writeInt(abnormalBack ? 1: 0);
     }
 
     public void write(PrintWriter pw) {
@@ -101,8 +130,11 @@ public class BreventConfiguration extends BreventToken {
         write(pw, BREVENT_TIMEOUT, timeout);
         write(pw, BREVENT_ALLOW_ROOT, allowRoot);
         write(pw, BREVENT_METHOD, method);
-        write(pw, BREVENT_ALLOW_GCM, allowGcm);
+        write(pw, BREVENT_OPTIMIZE_VPN, optimizeVpn);
         write(pw, BREVENT_STANDBY_TIMEOUT, standbyTimeout);
+        write(pw, BREVENT_CHECK_NOTIFICATION, checkNotification);
+        write(pw, BREVENT_WHEN_REQUEST, breventRequest);
+        write(pw, BREVENT_ABNORMAL_BACK, abnormalBack);
     }
 
     private void write(PrintWriter pw, String key, int value) {
@@ -127,7 +159,7 @@ public class BreventConfiguration extends BreventToken {
                 autoUpdate = Boolean.parseBoolean(value);
                 break;
             case BREVENT_TIMEOUT:
-                if (TextUtils.isDigitsOnly(value) && value.length() < 0x7) {
+                if (isDigit(value, 0x7)) {
                     timeout = Integer.parseInt(value);
                 }
                 if (timeout < MIN_BREVENT_TIMEOUT) {
@@ -140,20 +172,33 @@ public class BreventConfiguration extends BreventToken {
             case BREVENT_METHOD:
                 method = convertMethod(value);
                 break;
-            case BREVENT_ALLOW_GCM:
-                allowGcm = Boolean.parseBoolean(value);
+            case BREVENT_OPTIMIZE_VPN:
+                optimizeVpn = Boolean.parseBoolean(value);
                 break;
             case BREVENT_STANDBY_TIMEOUT:
-                if (TextUtils.isDigitsOnly(value) && value.length() < 0x7) {
+                if (isDigit(value, 0x7)) {
                     standbyTimeout = Integer.parseInt(value);
                 }
                 if (standbyTimeout < MIN_BREVENT_STANDBY_TIMEOUT) {
                     standbyTimeout = MIN_BREVENT_STANDBY_TIMEOUT;
                 }
                 break;
+            case BREVENT_CHECK_NOTIFICATION:
+                checkNotification = Boolean.parseBoolean(value);
+                break;
+            case BREVENT_WHEN_REQUEST:
+                breventRequest = Boolean.parseBoolean(value);
+                break;
+            case BREVENT_ABNORMAL_BACK:
+                abnormalBack = Boolean.parseBoolean(value);
+                break;
             default:
                 break;
         }
+    }
+
+    private boolean isDigit(String value, int maxLength) {
+        return !TextUtils.isEmpty(value) && TextUtils.isDigitsOnly(value) && value.length() < maxLength;
     }
 
     public boolean update(BreventConfiguration request) {
@@ -174,12 +219,24 @@ public class BreventConfiguration extends BreventToken {
             this.method = request.method;
             updated = true;
         }
-        if (this.allowGcm != request.allowGcm) {
-            this.allowGcm = request.allowGcm;
+        if (this.optimizeVpn != request.optimizeVpn) {
+            this.optimizeVpn = request.optimizeVpn;
             updated = true;
         }
         if (this.standbyTimeout != request.standbyTimeout) {
             this.standbyTimeout = request.standbyTimeout;
+            updated = true;
+        }
+        if (this.checkNotification != request.checkNotification) {
+            this.checkNotification = request.checkNotification;
+            updated = true;
+        }
+        if (this.breventRequest != request.breventRequest) {
+            this.breventRequest = request.breventRequest;
+            updated = true;
+        }
+        if (this.abnormalBack != request.abnormalBack) {
+            this.abnormalBack = request.abnormalBack;
             updated = true;
         }
         return updated;
@@ -196,5 +253,9 @@ public class BreventConfiguration extends BreventToken {
             return new BreventConfiguration[size];
         }
     };
+
+    public boolean isForceStopOnly() {
+        return method == BREVENT_METHOD_FORCE_STOP_ONLY;
+    }
 
 }

@@ -13,15 +13,17 @@ import android.preference.PreferenceFragment;
 import android.preference.PreferenceScreen;
 import android.preference.SwitchPreference;
 
+import me.piebridge.brevent.BuildConfig;
 import me.piebridge.brevent.R;
 import me.piebridge.brevent.protocol.BreventConfiguration;
-import me.piebridge.brevent.protocol.BreventUtils;
 import me.piebridge.donation.DonateActivity;
 
 /**
  * Created by thom on 2017/2/8.
  */
-public class SettingsFragment extends PreferenceFragment implements SharedPreferences.OnSharedPreferenceChangeListener, Preference.OnPreferenceClickListener {
+public class SettingsFragment extends PreferenceFragment
+        implements SharedPreferences.OnSharedPreferenceChangeListener,
+        Preference.OnPreferenceClickListener {
 
     public static final String SHOW_DONATION = "show_donation";
 
@@ -31,16 +33,18 @@ public class SettingsFragment extends PreferenceFragment implements SharedPrefer
     public static final String SHOW_FRAMEWORK_APPS = "show_framework_apps";
     public static final boolean DEFAULT_SHOW_FRAMEWORK_APPS = false;
 
-    public static final String HAS_PLAY = "has_play";
+    public static final String BREVENT_ALLOW_RECEIVER = "brevent_allow_receiver";
+    public static final boolean DEFAULT_BREVENT_ALLOW_RECEIVER = false;
+
     public static final String IS_PLAY = "is_play";
 
-    private PreferenceCategory breventAdvanced;
-    private PreferenceCategory breventUi;
+    private PreferenceCategory breventExperimental;
 
-    private SwitchPreference preferenceDonation;
-
-    private SwitchPreference preferenceAllowGcm;
+    private SwitchPreference preferenceOptimizeVpn;
+    private SwitchPreference preferenceAbnormalBack;
     private SwitchPreference preferenceAllowRoot;
+    private SwitchPreference preferenceAllowReceiver;
+    private SwitchPreference preferenceDonation;
 
     private Preference preferenceStandbyTimeout;
 
@@ -56,39 +60,49 @@ public class SettingsFragment extends PreferenceFragment implements SharedPrefer
         // Load the preferences from an XML resource
         addPreferencesFromResource(R.xml.settings);
 
+        Bundle arguments = getArguments();
         PreferenceScreen preferenceScreen = getPreferenceScreen();
-        breventAdvanced = (PreferenceCategory) preferenceScreen.findPreference("brevent_advanced");
-        breventUi = (PreferenceCategory) preferenceScreen.findPreference("brevent_ui");
+
+        breventExperimental = (PreferenceCategory) preferenceScreen
+                .findPreference("brevent_experimental");
+
+        preferenceOptimizeVpn = (SwitchPreference) preferenceScreen.findPreference(
+                BreventConfiguration.BREVENT_OPTIMIZE_VPN);
+        preferenceAbnormalBack = (SwitchPreference) preferenceScreen.findPreference(
+                BreventConfiguration.BREVENT_ABNORMAL_BACK);
+        preferenceAllowRoot = (SwitchPreference) preferenceScreen.findPreference(
+                BreventConfiguration.BREVENT_ALLOW_ROOT);
+        preferenceAllowReceiver = (SwitchPreference) preferenceScreen.findPreference(
+                BREVENT_ALLOW_RECEIVER);
+
         preferenceDonation = (SwitchPreference) preferenceScreen.findPreference(SHOW_DONATION);
 
-        preferenceAllowGcm = (SwitchPreference) preferenceScreen.findPreference(BreventConfiguration.BREVENT_ALLOW_GCM);
-        preferenceAllowRoot = (SwitchPreference) preferenceScreen.findPreference(BreventConfiguration.BREVENT_ALLOW_ROOT);
-
-        preferenceStandbyTimeout = preferenceScreen.findPreference(BreventConfiguration.BREVENT_STANDBY_TIMEOUT);
-        if (!BreventUtils.supportStandby()) {
-            ((PreferenceCategory) preferenceScreen.findPreference("brevent_list")).removePreference(preferenceStandbyTimeout);
+        preferenceStandbyTimeout = preferenceScreen.findPreference(
+                BreventConfiguration.BREVENT_STANDBY_TIMEOUT);
+        BreventApplication application = (BreventApplication) getActivity().getApplication();
+        if (!application.supportStandby()) {
+            ((PreferenceCategory) preferenceScreen.findPreference("brevent_list")).removePreference(
+                    preferenceStandbyTimeout);
         }
 
-        if (getArguments().getBoolean(IS_PLAY, false)) {
-            preferenceAllowGcm.setEnabled(false);
-            preferenceAllowRoot.setEnabled(false);
-        } else {
-            if (!getArguments().getBoolean(HAS_PLAY, false)) {
-                preferenceDonation.setChecked(true);
-            }
-            removeDonationIfNeeded();
-        }
         SharedPreferences sharedPreferences = getPreferenceScreen().getSharedPreferences();
-        if (!sharedPreferences.getBoolean(BreventConfiguration.BREVENT_ALLOW_ROOT, false)) {
-            breventAdvanced.removePreference(preferenceAllowRoot);
-            preferenceScreen.findPreference("brevent_about_version").setOnPreferenceClickListener(this);
+        if (!BuildConfig.RELEASE) {
+            ((PreferenceCategory) preferenceScreen.findPreference("brevent_about"))
+                    .removePreference(preferenceDonation);
         }
-        if (getArguments().getInt(Intent.EXTRA_ALARM_COUNT, 0) == 0) {
-            breventAdvanced.removePreference(preferenceScreen.findPreference(BreventConfiguration.BREVENT_ALLOW_GCM));
+        if (BuildConfig.RELEASE && arguments.getBoolean(IS_PLAY, false)) {
+            preferenceOptimizeVpn.setEnabled(false);
+            preferenceAbnormalBack.setEnabled(false);
+            preferenceAllowRoot.setEnabled(false);
+            preferenceAllowReceiver.setEnabled(false);
+        }
+        if (!sharedPreferences.getBoolean(BreventConfiguration.BREVENT_ALLOW_ROOT, false)) {
+            breventExperimental.removePreference(preferenceAllowReceiver);
+            breventExperimental.removePreference(preferenceAllowRoot);
+            preferenceScreen.findPreference("brevent_about_version")
+                    .setOnPreferenceClickListener(this);
         }
         onUpdateBreventMethod();
-
-        breventUi.removePreference(preferenceScreen.findPreference(SHOW_ALL_APPS));
     }
 
     @Override
@@ -122,7 +136,8 @@ public class SettingsFragment extends PreferenceFragment implements SharedPrefer
     }
 
     private void onUpdateBreventMethod() {
-        if ("standby_forcestop".equals(getPreferenceScreen().getSharedPreferences().getString(BreventConfiguration.BREVENT_METHOD, null))) {
+        if ("standby_forcestop".equals(getPreferenceScreen().getSharedPreferences().getString(
+                BreventConfiguration.BREVENT_METHOD, null))) {
             preferenceStandbyTimeout.setEnabled(true);
         } else {
             preferenceStandbyTimeout.setEnabled(false);
@@ -130,7 +145,13 @@ public class SettingsFragment extends PreferenceFragment implements SharedPrefer
     }
 
     private void onShowDonationChanged() {
-        boolean showDonation = getPreferenceScreen().getSharedPreferences().getBoolean(SHOW_DONATION, true);
+        boolean showDonation;
+        if (BuildConfig.RELEASE) {
+            showDonation = getPreferenceScreen().getSharedPreferences()
+                    .getBoolean(SHOW_DONATION, true);
+        } else {
+            showDonation = false;
+        }
         ((DonateActivity) getActivity()).showDonation(showDonation);
     }
 
@@ -153,43 +174,44 @@ public class SettingsFragment extends PreferenceFragment implements SharedPrefer
         } else if (contributor) {
             preferenceDonation.setSummary(R.string.show_donation_contributor);
         }
-        if (contributor) {
-            total += 0x5;
-        }
-        if (total <= 0) {
-            preferenceDonation.setChecked(true);
-            onShowDonationChanged();
-            removeDonationIfNeeded();
-            if (getArguments().getBoolean(IS_PLAY, false) && total == 0) {
-                preferenceAllowGcm.setEnabled(false);
-                preferenceAllowGcm.setChecked(false);
-                preferenceAllowRoot.setEnabled(false);
-                preferenceAllowRoot.setChecked(false);
-            } else {
-                preferenceAllowGcm.setEnabled(true);
-                preferenceAllowRoot.setEnabled(true);
+        if (getArguments().getBoolean(IS_PLAY, false)) {
+            if (contributor) {
+                total += 0x5;
             }
-        } else {
-            breventUi.addPreference(preferenceDonation);
-            if (!getArguments().getBoolean(IS_PLAY, false) || total >= 0x3) {
-                preferenceAllowGcm.setEnabled(true);
-                preferenceAllowRoot.setEnabled(true);
-            } else if (total == 1) {
-                preferenceAllowGcm.setEnabled(false);
-                preferenceAllowGcm.setChecked(false);
-                preferenceAllowRoot.setEnabled(false);
-                preferenceAllowRoot.setChecked(false);
-            } else if (total == 2) {
-                preferenceAllowGcm.setEnabled(true);
-                preferenceAllowRoot.setEnabled(false);
-                preferenceAllowRoot.setChecked(false);
-            }
+            updatePlayVersion(total);
         }
     }
 
-    private void removeDonationIfNeeded() {
-        if (!"colombo".equals(Build.DEVICE)) {
-            breventUi.removePreference(preferenceDonation);
+    private void updatePlayVersion(int total) {
+        if (total <= 0x0) {
+            preferenceOptimizeVpn.setEnabled(false);
+            preferenceOptimizeVpn.setChecked(false);
+            preferenceAbnormalBack.setEnabled(false);
+            preferenceAbnormalBack.setChecked(false);
+            preferenceAllowRoot.setEnabled(false);
+            preferenceAllowRoot.setChecked(false);
+            preferenceAllowReceiver.setEnabled(false);
+            preferenceAllowReceiver.setChecked(false);
+        } else if (total == 0x1) {
+            preferenceOptimizeVpn.setEnabled(true);
+            preferenceAbnormalBack.setEnabled(false);
+            preferenceAbnormalBack.setChecked(false);
+            preferenceAllowRoot.setEnabled(false);
+            preferenceAllowRoot.setChecked(false);
+            preferenceAllowReceiver.setEnabled(false);
+            preferenceAllowReceiver.setChecked(false);
+        } else if (total == 0x2) {
+            preferenceOptimizeVpn.setEnabled(true);
+            preferenceAbnormalBack.setEnabled(true);
+            preferenceAllowRoot.setEnabled(false);
+            preferenceAllowRoot.setChecked(false);
+            preferenceAllowReceiver.setEnabled(false);
+            preferenceAllowReceiver.setChecked(false);
+        } else {
+            preferenceOptimizeVpn.setEnabled(true);
+            preferenceAbnormalBack.setEnabled(true);
+            preferenceAllowRoot.setEnabled(true);
+            preferenceAllowReceiver.setEnabled(true);
         }
     }
 
@@ -198,11 +220,13 @@ public class SettingsFragment extends PreferenceFragment implements SharedPrefer
         String key = preference.getKey();
         if ("brevent_about_version".equals(key)) {
             if (++repeat == 0x7) {
-                breventAdvanced.addPreference(preferenceAllowRoot);
+                breventExperimental.addPreference(preferenceAllowRoot);
+                breventExperimental.addPreference(preferenceAllowReceiver);
             }
         } else if ("brevent_about_developer".equals(key)) {
             Intent intent = new Intent();
-            intent.setComponent(new ComponentName("com.android.settings", "com.android.settings.DevelopmentSettings"));
+            intent.setComponent(new ComponentName("com.android.settings",
+                    "com.android.settings.DevelopmentSettings"));
             intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
             try {
                 startActivity(intent);
